@@ -3,10 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 declare global {
   interface Window {
     voiceflow?: { chat: { load: (config: Record<string, unknown>) => void } };
+    __vfFetchPatched?: boolean;
   }
 }
 
-/* ─────────────── Stars ─────────────── */
+/* ─────────────────────────────────────────────
+   Stars background
+───────────────────────────────────────────── */
 function Stars() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -24,10 +27,11 @@ function Stars() {
   return <div ref={ref} className="fixed inset-0 pointer-events-none z-0" aria-hidden />;
 }
 
-/* ─────────────── Budget types ─────────────── */
+/* ─────────────────────────────────────────────
+   Budget types & parser
+───────────────────────────────────────────── */
 interface BudgetData { limit: number; spent: number; label: string; currency: string }
 
-/* ─────────────── Chat message parser ─────────────── */
 type BudgetUpdate =
   | { action: "setLimit"; amount: number }
   | { action: "addSpent"; amount: number }
@@ -35,7 +39,6 @@ type BudgetUpdate =
 
 function parseChatText(raw: string): BudgetUpdate | null {
   const text = raw.toLowerCase();
-  // Match a number possibly preceded by a currency symbol
   const numRe = /(?:[r$£€]\s*)?(\d[\d\s,]*(?:\.\d{1,2})?)/;
   const m = text.match(numRe);
   if (!m) return null;
@@ -44,23 +47,63 @@ function parseChatText(raw: string): BudgetUpdate | null {
 
   if (/\b(?:budget|limit|monthly|total budget|budget of|budget is|set budget|new budget)\b/.test(text))
     return { action: "setLimit", amount };
-
   if (/\b(?:total spent|spent so far|already spent|have spent)\b/.test(text))
     return { action: "setSpent", amount };
-
   if (/\b(?:spent|spend|paid|cost|bought|purchase|expense|bill|fee)\b/.test(text))
     return { action: "addSpent", amount };
 
   return null;
 }
 
-/* ─────────────── Voiceflow Widget ─────────────── */
+/* ─────────────────────────────────────────────
+   Fetch interceptor — installed once globally
+   Listens to every Voiceflow runtime call and
+   forwards message text to a callback.
+───────────────────────────────────────────── */
+type MsgCallback = (text: string) => void;
+const vfListeners = new Set<MsgCallback>();
+
+function installFetchInterceptor() {
+  if (window.__vfFetchPatched) return;
+  window.__vfFetchPatched = true;
+
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = async function (input, init) {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+        ? input.href
+        : (input as Request).url;
+
+    // Only intercept Voiceflow runtime "interact" calls (user messages)
+    if (url.includes("general-runtime.voiceflow.com") && url.includes("interact") && init?.body) {
+      try {
+        const body = typeof init.body === "string" ? JSON.parse(init.body) : null;
+        const payload = body?.action?.payload;
+        if (typeof payload === "string" && payload.trim()) {
+          vfListeners.forEach((cb) => cb(payload.trim()));
+        }
+      } catch {}
+    }
+
+    return originalFetch(input, init);
+  };
+}
+
+/* ─────────────────────────────────────────────
+   Voiceflow embedded widget
+───────────────────────────────────────────── */
 function VoiceflowWidget({ onMessage }: { onMessage: (text: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedRef = useRef(false);
-  const seenRef = useRef(new Set<string>());
-  const onMessageRef = useRef(onMessage);
-  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+
+  // Keep listener ref fresh
+  useEffect(() => {
+    vfListeners.add(onMessage);
+    return () => { vfListeners.delete(onMessage); };
+  }, [onMessage]);
 
   // Load the widget script
   useEffect(() => {
@@ -81,55 +124,15 @@ function VoiceflowWidget({ onMessage }: { onMessage: (text: string) => void }) {
     }
 
     if (window.voiceflow?.chat) { initWidget(); return; }
-    const existing = document.querySelector<HTMLScriptElement>('script[src="https://cdn.voiceflow.com/widget-next/bundle.mjs"]');
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://cdn.voiceflow.com/widget-next/bundle.mjs"]'
+    );
     if (existing) { existing.addEventListener("load", initWidget, { once: true }); return; }
     const script = document.createElement("script");
     script.type = "text/javascript";
     script.src = "https://cdn.voiceflow.com/widget-next/bundle.mjs";
     script.addEventListener("load", initWidget, { once: true });
     document.head.appendChild(script);
-  }, []);
-
-  // MutationObserver: watch the widget DOM for new messages
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let debounce: ReturnType<typeof setTimeout>;
-
-    function scanNewText(root: Node) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      let n: Node | null;
-      while ((n = walker.nextNode())) {
-        const text = n.textContent?.trim() ?? "";
-        if (text.length < 6 || seenRef.current.has(text)) continue;
-        seenRef.current.add(text);
-        onMessageRef.current(text);
-      }
-    }
-
-    const observer = new MutationObserver((mutations) => {
-      clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        for (const m of mutations) {
-          m.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE)
-              scanNewText(node);
-          });
-        }
-      }, 350);
-    });
-
-    // Start observing once the widget has rendered something
-    function startObserving() {
-      if (container.children.length > 0) {
-        observer.observe(container, { childList: true, subtree: true });
-      } else {
-        setTimeout(startObserving, 400);
-      }
-    }
-    startObserving();
-
-    return () => { observer.disconnect(); clearTimeout(debounce); };
   }, []);
 
   return (
@@ -141,12 +144,15 @@ function VoiceflowWidget({ onMessage }: { onMessage: (text: string) => void }) {
   );
 }
 
-/* ─────────────── Set Budget Modal ─────────────── */
-function SetBudgetModal({ current, onSave, onClose }: {
+/* ─────────────────────────────────────────────
+   Set Budget modal
+───────────────────────────────────────────── */
+interface BudgetModalProps {
   current: BudgetData | null;
   onSave: (d: BudgetData) => void;
   onClose: () => void;
-}) {
+}
+function SetBudgetModal({ current, onSave, onClose }: BudgetModalProps) {
   const [limit, setLimit] = useState(current?.limit?.toString() ?? "");
   const [spent, setSpent] = useState(current?.spent?.toString() ?? "");
   const [label, setLabel] = useState(current?.label ?? "Monthly budget goal");
@@ -160,34 +166,30 @@ function SetBudgetModal({ current, onSave, onClose }: {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(5,3,26,.88)", backdropFilter: "blur(8px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-5 animate-fade-in-up"
-        style={{ background: "linear-gradient(160deg,rgba(13,7,53,.99),rgba(8,4,43,.99))", border: "0.5px solid rgba(139,92,246,.45)", boxShadow: "0 0 60px rgba(99,79,167,.35)" }}
-      >
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-5 animate-fade-in-up"
+        style={{ background: "linear-gradient(160deg,rgba(13,7,53,.99),rgba(8,4,43,.99))", border: "0.5px solid rgba(139,92,246,.45)", boxShadow: "0 0 60px rgba(99,79,167,.35)" }}>
         <div className="flex items-center justify-between">
           <h2 className="text-purple-100 font-semibold">Set Your Budget</h2>
           <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center text-purple-400 hover:text-purple-200 transition-colors" style={{ background: "rgba(99,79,167,.2)" }}>✕</button>
         </div>
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <Field label="Budget label">
+          <ModalField label="Budget label">
             <input type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="Monthly budget goal" className="input-field" />
-          </Field>
+          </ModalField>
           <div className="flex gap-3">
-            <Field label="Currency" className="w-20">
+            <ModalField label="Currency" className="w-20">
               <input type="text" value={currency} onChange={e => setCurrency(e.target.value)} maxLength={3} className="input-field text-center" />
-            </Field>
-            <Field label="Budget limit" className="flex-1">
+            </ModalField>
+            <ModalField label="Budget limit" className="flex-1">
               <input type="number" value={limit} onChange={e => setLimit(e.target.value)} placeholder="3000" min="1" required className="input-field" />
-            </Field>
+            </ModalField>
           </div>
-          <Field label="Amount spent so far">
+          <ModalField label="Amount spent so far">
             <input type="number" value={spent} onChange={e => setSpent(e.target.value)} placeholder="0" min="0" className="input-field" />
-          </Field>
+          </ModalField>
           <button type="submit" className="mt-1 w-full py-3 rounded-xl text-sm font-semibold text-white hover:opacity-90 active:scale-[.98] transition-all" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)" }}>
             Save Budget
           </button>
@@ -196,8 +198,7 @@ function SetBudgetModal({ current, onSave, onClose }: {
     </div>
   );
 }
-
-function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+function ModalField({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <label className="text-xs text-purple-400 font-medium">{label}</label>
@@ -206,7 +207,83 @@ function Field({ label, children, className = "" }: { label: string; children: R
   );
 }
 
-/* ─────────────── Budget Barometer ─────────────── */
+/* ─────────────────────────────────────────────
+   How It Works modal
+───────────────────────────────────────────── */
+function HowItWorksModal({ onClose }: { onClose: () => void }) {
+  const steps = [
+    {
+      num: "01",
+      icon: "🎯",
+      title: "Set your budget limit",
+      desc: 'Click "Set Budget" and enter your monthly spending limit — for example R3,000. You can also enter how much you\'ve already spent this month.',
+    },
+    {
+      num: "02",
+      icon: "💬",
+      title: "Chat with Frank",
+      desc: 'Tell Frank what you\'ve spent in plain language — for example "I spent R500 on groceries" or "I paid R200 for electricity." Frank understands natural conversation.',
+    },
+    {
+      num: "03",
+      icon: "📊",
+      title: "Watch the barometer update",
+      desc: "The budget barometer on the left reads every message and automatically moves the bar when it detects a spending amount. No manual entry needed.",
+    },
+    {
+      num: "04",
+      icon: "⚠️",
+      title: "Get alerts before you overspend",
+      desc: "The bar turns amber when you hit 70% of your limit and red at 90%. Frank can also give you personalised advice on how to cut back and save more.",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(5,3,26,.9)", backdropFilter: "blur(10px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-2xl p-7 flex flex-col gap-6 animate-fade-in-up"
+        style={{ background: "linear-gradient(160deg,rgba(13,7,53,.99),rgba(8,4,43,.99))", border: "0.5px solid rgba(139,92,246,.4)", boxShadow: "0 0 70px rgba(99,79,167,.3)", maxHeight: "90vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-purple-100 font-bold text-lg">How Smart Budget Works</h2>
+            <p className="text-purple-400 text-sm mt-1">Four simple steps to take control of your money</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center text-purple-400 hover:text-purple-200 transition-colors flex-shrink-0 ml-4" style={{ background: "rgba(99,79,167,.2)" }}>✕</button>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          {steps.map(({ num, icon, title, desc }) => (
+            <div key={num} className="flex gap-4 p-4 rounded-xl" style={{ background: "rgba(99,79,167,.1)", border: "0.5px solid rgba(139,92,246,.18)" }}>
+              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg" style={{ background: "linear-gradient(135deg,rgba(124,58,237,.4),rgba(79,70,229,.3))", border: "0.5px solid rgba(139,92,246,.3)" }}>{icon}</div>
+                <span className="text-xs font-bold text-purple-600">{num}</span>
+              </div>
+              <div>
+                <p className="text-purple-100 font-semibold text-sm">{title}</p>
+                <p className="text-purple-400 text-xs leading-relaxed mt-1">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-xl p-4" style={{ background: "rgba(74,222,128,.07)", border: "0.5px solid rgba(74,222,128,.25)" }}>
+          <p className="text-xs text-green-300 leading-relaxed">
+            <span className="font-semibold">Quick tip:</span> Try saying <span className="font-mono bg-green-900/30 px-1 rounded">"My budget is R5000"</span> to set your limit directly in the chat, or <span className="font-mono bg-green-900/30 px-1 rounded">"I spent R800 on rent"</span> to log an expense — the barometer updates instantly.
+          </p>
+        </div>
+
+        <button onClick={onClose} className="w-full py-3 rounded-xl text-sm font-semibold text-white hover:opacity-90 active:scale-[.98] transition-all" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)" }}>
+          Got it — start chatting
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Budget barometer
+───────────────────────────────────────────── */
 function BudgetBarometer({ budget, onEdit, flash }: { budget: BudgetData; onEdit: () => void; flash: boolean }) {
   const pct = Math.min((budget.spent / budget.limit) * 100, 100);
   const remaining = Math.max(budget.limit - budget.spent, 0);
@@ -215,19 +292,13 @@ function BudgetBarometer({ budget, onEdit, flash }: { budget: BudgetData; onEdit
   const alertColor = pct >= 90 ? "#ef4444" : pct >= 70 ? "#f59e0b" : "#4ade80";
   const alertMsg = isOver
     ? `You've exceeded your budget by ${budget.currency}${(budget.spent - budget.limit).toLocaleString()}.`
-    : pct >= 90 ? `You're at ${Math.round(pct)}% of your budget. Almost at the limit!`
+    : pct >= 90 ? `You're at ${Math.round(pct)}% — almost at your limit!`
     : pct >= 70 ? `You've used ${Math.round(pct)}% — keep an eye on spending.`
-    : `You're on track — ${Math.round(pct)}% of your budget used.`;
+    : `You're on track — ${Math.round(pct)}% used.`;
 
   return (
-    <div
-      className="rounded-2xl p-4 flex flex-col gap-3 transition-all duration-300"
-      style={{
-        background: flash ? "rgba(124,58,237,.18)" : "linear-gradient(160deg,rgba(13,7,53,.92),rgba(8,4,43,.95))",
-        border: flash ? "0.5px solid rgba(139,92,246,.7)" : "0.5px solid rgba(139,92,246,.25)",
-        boxShadow: flash ? "0 0 24px rgba(124,58,237,.4)" : "0 0 40px rgba(99,79,167,.1)",
-      }}
-    >
+    <div className="rounded-2xl p-4 flex flex-col gap-3 transition-all duration-500"
+      style={{ background: flash ? "rgba(124,58,237,.18)" : "linear-gradient(160deg,rgba(13,7,53,.92),rgba(8,4,43,.95))", border: flash ? "0.5px solid rgba(139,92,246,.7)" : "0.5px solid rgba(139,92,246,.25)", boxShadow: flash ? "0 0 24px rgba(124,58,237,.45)" : "0 0 30px rgba(99,79,167,.1)" }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: "rgba(99,79,167,.25)" }}>🎯</div>
@@ -237,12 +308,16 @@ function BudgetBarometer({ budget, onEdit, flash }: { budget: BudgetData; onEdit
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {flash && <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(124,58,237,.25)", color: "#c4b5fd" }}>auto-updated</span>}
+          {flash && (
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium animate-fade-in-up" style={{ background: "rgba(124,58,237,.25)", color: "#c4b5fd" }}>
+              auto-updated ✨
+            </span>
+          )}
           <div className="text-right mr-1">
             <p className="text-sm font-bold" style={{ color: isOver ? "#ef4444" : "#e2d9f3" }}>{budget.currency}{remaining.toLocaleString()}</p>
             <p className="text-xs text-purple-500">{isOver ? "over" : "left"}</p>
           </div>
-          <button onClick={onEdit} className="w-7 h-7 rounded-lg flex items-center justify-center text-purple-400 hover:text-purple-200 transition-colors" style={{ background: "rgba(99,79,167,.18)", border: "0.5px solid rgba(139,92,246,.22)" }} title="Edit">✏️</button>
+          <button onClick={onEdit} className="w-7 h-7 rounded-lg flex items-center justify-center text-purple-400 hover:text-purple-200 transition-colors text-xs" style={{ background: "rgba(99,79,167,.18)", border: "0.5px solid rgba(139,92,246,.22)" }} title="Edit">✏️</button>
         </div>
       </div>
 
@@ -254,7 +329,9 @@ function BudgetBarometer({ budget, onEdit, flash }: { budget: BudgetData; onEdit
         </div>
         <div className="w-full h-3 rounded-full overflow-hidden relative" style={{ background: "rgba(99,79,167,.2)" }}>
           <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${pct}%`, background: barColor, boxShadow: pct >= 90 ? "0 0 10px rgba(239,68,68,.5)" : "0 0 8px rgba(124,58,237,.35)" }} />
-          {[25, 50, 75].map(mk => <div key={mk} className="absolute top-0 bottom-0 w-px" style={{ left: `${mk}%`, background: "rgba(255,255,255,.12)" }} />)}
+          {[25, 50, 75].map(mk => (
+            <div key={mk} className="absolute top-0 bottom-0 w-px" style={{ left: `${mk}%`, background: "rgba(255,255,255,.12)" }} />
+          ))}
         </div>
         <div className="flex justify-between text-xs text-purple-700"><span>25%</span><span>50%</span><span>75%</span></div>
       </div>
@@ -267,13 +344,17 @@ function BudgetBarometer({ budget, onEdit, flash }: { budget: BudgetData; onEdit
   );
 }
 
-/* ─────────────── Main Page ─────────────── */
+/* ─────────────────────────────────────────────
+   Main page
+───────────────────────────────────────────── */
 export default function Home() {
   const [budget, setBudget] = useState<BudgetData | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [showHowModal, setShowHowModal] = useState(false);
   const [flash, setFlash] = useState(false);
-  const budgetRef = useRef<BudgetData | null>(null);
-  useEffect(() => { budgetRef.current = budget; }, [budget]);
+
+  // Install the fetch interceptor once when the page loads
+  useEffect(() => { installFetchInterceptor(); }, []);
 
   const handleChatMessage = useCallback((text: string) => {
     const update = parseChatText(text);
@@ -281,44 +362,47 @@ export default function Home() {
 
     setBudget((prev) => {
       const base = prev ?? { limit: 0, spent: 0, label: "Monthly budget goal", currency: "R" };
-      let next: BudgetData;
-      if (update.action === "setLimit") next = { ...base, limit: update.amount };
-      else if (update.action === "setSpent") next = { ...base, spent: update.amount };
-      else next = { ...base, spent: base.spent + update.amount };
-      return next;
+      if (update.action === "setLimit") return { ...base, limit: update.amount };
+      if (update.action === "setSpent") return { ...base, spent: update.amount };
+      return { ...base, spent: base.spent + update.amount };
     });
 
-    // Flash the barometer to signal auto-update
     setFlash(true);
-    setTimeout(() => setFlash(false), 2000);
+    setTimeout(() => setFlash(false), 2500);
   }, []);
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: "radial-gradient(ellipse at top, #0d0735 0%, #05031a 60%)" }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ background: "radial-gradient(ellipse at top,#0d0735 0%,#05031a 60%)" }}>
       <Stars />
 
-      {showModal && (
+      {showBudgetModal && (
         <SetBudgetModal
           current={budget}
-          onSave={(d) => { setBudget(d); setShowModal(false); }}
-          onClose={() => setShowModal(false)}
+          onSave={(d) => { setBudget(d); setShowBudgetModal(false); }}
+          onClose={() => setShowBudgetModal(false)}
         />
       )}
+      {showHowModal && <HowItWorksModal onClose={() => setShowHowModal(false)} />}
 
       <div className="relative z-10 flex flex-col h-full">
-        {/* ── Header ── */}
+        {/* Header */}
         <header className="flex-shrink-0 px-5 py-3.5 flex items-center justify-between max-w-7xl mx-auto w-full">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white animate-pulse-glow" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", border: "1.5px solid rgba(139,92,246,.5)" }}>SB</div>
             <span className="text-base font-semibold text-purple-100">Smart Budget</span>
           </div>
           <nav className="hidden md:flex items-center gap-5">
-            {["Features", "How it works", "About"].map(item => (
-              <a key={item} href="#" className="text-sm text-purple-300 hover:text-purple-100 transition-colors">{item}</a>
-            ))}
+            <a href="#" className="text-sm text-purple-300 hover:text-purple-100 transition-colors">Features</a>
+            <button
+              onClick={() => setShowHowModal(true)}
+              className="text-sm text-purple-300 hover:text-purple-100 transition-colors"
+            >
+              How it works
+            </button>
+            <a href="#" className="text-sm text-purple-300 hover:text-purple-100 transition-colors">About</a>
           </nav>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => setShowBudgetModal(true)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all hover:opacity-90 active:scale-[.97]"
             style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", border: "1px solid rgba(139,92,246,.4)", color: "#fff" }}
           >
@@ -327,10 +411,10 @@ export default function Home() {
           </button>
         </header>
 
-        {/* ── Main two-column layout ── */}
+        {/* Two-column main */}
         <main className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 px-5 pb-4 max-w-7xl mx-auto w-full">
 
-          {/* Left panel – scrollable */}
+          {/* Left – scrollable content */}
           <section className="lg:flex-1 overflow-y-auto pr-0 lg:pr-6 pb-4 lg:pb-0 flex flex-col gap-4 custom-scroll">
             <div className="pt-4 flex flex-col gap-4">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full w-fit text-xs font-medium" style={{ background: "rgba(99,79,167,.18)", border: "0.5px solid rgba(139,92,246,.28)", color: "#a78bca" }}>
@@ -344,38 +428,41 @@ export default function Home() {
               </h1>
 
               <p className="text-sm text-purple-300 leading-relaxed max-w-xs">
-                Chat with Frank to track spending and manage your budget. Frank listens — mention amounts or budgets and the barometer updates live.
+                Chat with Frank to track spending. Mention an amount and the barometer updates live — no manual entry needed.
               </p>
 
-              {/* Budget barometer or prompt */}
+              {/* Barometer or setup prompt */}
               {budget ? (
-                <BudgetBarometer budget={budget} onEdit={() => setShowModal(true)} flash={flash} />
+                <BudgetBarometer budget={budget} onEdit={() => setShowBudgetModal(true)} flash={flash} />
               ) : (
                 <button
-                  onClick={() => setShowModal(true)}
+                  onClick={() => setShowBudgetModal(true)}
                   className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left hover:opacity-90 active:scale-[.98] transition-all w-full"
                   style={{ background: "rgba(99,79,167,.15)", border: "0.5px solid rgba(139,92,246,.32)" }}
                 >
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)" }}>🎯</div>
                   <div className="flex-1">
                     <p className="text-purple-100 text-sm font-semibold">Set your monthly budget</p>
-                    <p className="text-purple-500 text-xs mt-0.5">The barometer auto-updates as you chat</p>
+                    <p className="text-purple-500 text-xs mt-0.5">The bar auto-updates as you chat with Frank</p>
                   </div>
                   <svg className="text-purple-500 flex-shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
               )}
 
-              {/* Hint pills */}
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { icon: "💬", label: "\"I spent R500 on food\"" },
-                  { icon: "🎯", label: "\"My budget is R3000\"" },
-                  { icon: "💰", label: "Save money tips" },
-                ].map(({ icon, label }) => (
-                  <div key={label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity" style={{ background: "rgba(99,79,167,.16)", border: "0.5px solid rgba(139,92,246,.24)", color: "#a78bca" }}>
-                    <span>{icon}</span><span>{label}</span>
-                  </div>
-                ))}
+              {/* Example phrases */}
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs text-purple-600 font-medium">Try saying to Frank:</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { icon: "💬", label: '"I spent R500 on food"' },
+                    { icon: "🎯", label: '"My budget is R3000"' },
+                    { icon: "💰", label: '"Save money tips"' },
+                  ].map(({ icon, label }) => (
+                    <div key={label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs hover:opacity-80 transition-opacity" style={{ background: "rgba(99,79,167,.16)", border: "0.5px solid rgba(139,92,246,.24)", color: "#a78bca" }}>
+                      <span>{icon}</span><span>{label}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Stats */}
@@ -389,7 +476,7 @@ export default function Home() {
               </div>
 
               {/* Feature cards */}
-              <div className="grid grid-cols-1 gap-3 pt-2">
+              <div className="flex flex-col gap-3 pt-2">
                 {[
                   { icon: "🎯", t: "Smart Budgeting", d: "Create personalised budgets tailored to your income and goals." },
                   { icon: "📈", t: "Savings Goals", d: "Set targets and get step-by-step guidance on reaching them faster." },
@@ -417,7 +504,7 @@ export default function Home() {
             </div>
           </section>
 
-          {/* Right panel – chatbot, fills height */}
+          {/* Right – chatbot panel */}
           <section className="flex-shrink-0 lg:w-[460px] flex flex-col min-h-[420px] lg:min-h-0">
             <div className="glass-card rounded-2xl p-1.5 relative h-full flex flex-col" style={{ minHeight: "420px" }}>
               <div className="absolute -inset-px rounded-2xl pointer-events-none" style={{ background: "linear-gradient(135deg,rgba(139,92,246,.12),rgba(79,70,229,.06))" }} />
