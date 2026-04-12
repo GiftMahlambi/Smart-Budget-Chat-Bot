@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Budget Chatbot</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Arial, sans-serif;
+            background: radial-gradient(ellipse at top, #0d0735 0%, #05031a 60%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        #stars-container {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .star {
+            position: absolute;
+            border-radius: 50%;
+            background: #fff;
+            animation: twinkle linear infinite;
+        }
+        @keyframes twinkle {
+            0%, 100% { opacity: .8; }
+            50% { opacity: .1; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(139,92,246,.4); }
+            50% { box-shadow: 0 0 0 8px rgba(139,92,246,0); }
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .2; }
+        }
+
+        #chat-container {
+            position: relative;
+            z-index: 1;
+            width: 420px;
+            background: linear-gradient(160deg, rgba(13,7,53,.95) 0%, rgba(8,4,43,.97) 100%);
+            border: 0.5px solid rgba(139,92,246,.3);
+            border-radius: 20px;
+            padding: 24px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 0 60px rgba(99,79,167,.2), 0 0 120px rgba(79,70,229,.08);
+        }
+
+        /* Header */
+        #chat-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 0.5px solid rgba(139,92,246,.2);
+        }
+        #avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+            border: 1.5px solid rgba(139,92,246,.5);
+        }
+        #header-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e2d9f3;
+        }
+        #header-status {
+            font-size: 12px;
+            color: #7c6fa0;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 2px;
+        }
+        #status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #4ade80;
+        }
+
+        /* Chatbox */
+        #chatbox {
+            height: 340px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-right: 4px;
+        }
+        #chatbox::-webkit-scrollbar { width: 4px; }
+        #chatbox::-webkit-scrollbar-track { background: transparent; }
+        #chatbox::-webkit-scrollbar-thumb { background: rgba(139,92,246,.3); border-radius: 2px; }
+
+        .msg-wrap { animation: fadeIn .25s ease; }
+        .msg-wrap.user { align-self: flex-end; max-width: 82%; }
+        .msg-wrap.bot { align-self: flex-start; max-width: 82%; }
+
+        .bubble {
+            padding: 10px 14px;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+        .bubble.user {
+            background: linear-gradient(135deg,  rgba(14, 248, 209, 0.7), rgba(9, 250, 238, 0.45));
+            border: 0.5px solid rgb(14, 248, 209);
+            border-radius: 14px 4px 14px 14px;
+            color: #e8e0f6;
+        }
+        .bubble.bot {
+            background: rgba(99,79,167,.22);
+            border: 0.5px solid rgba(139,92,246,.25);
+            border-radius: 4px 14px 14px 14px;
+            color: #d4c8f0;
+        }
+        .msg-label {
+            font-size: 11px;
+            color: #5a4e78;
+            margin-top: 4px;
+            padding: 0 6px;
+        }
+        .msg-wrap.user .msg-label { text-align: right; }
+
+        /* Typing indicator */
+        #typing .bubble { display: flex; gap: 5px; align-items: center; }
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #7c6fa0;
+            animation: blink 1.2s infinite;
+        }
+        .typing-dot:nth-child(2) { animation-delay: .2s; }
+        .typing-dot:nth-child(3) { animation-delay: .4s; }
+
+        /* Input area */
+        #input-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        #input-wrap {
+            flex: 1;
+            background: rgba(255,255,255,.05);
+            border: 0.5px solid rgba(139,92,246,.35);
+            border-radius: 24px;
+            padding: 10px 16px;
+            transition: border-color .2s;
+        }
+        #input-wrap:focus-within { border-color: rgba(139,92,246,.7); }
+        #userInput {
+            width: 100%;
+            background: none;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            color: #e2d9f3;
+            font-family: inherit;
+        }
+        #userInput::placeholder { color: #4a4065; }
+        #send-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            animation: pulse 2.5s infinite;
+            transition: transform .1s, opacity .2s;
+        }
+        #send-btn:hover { opacity: .9; }
+        #send-btn:active { transform: scale(.94); }
+
+        /* Quick replies */
+        #quick-replies {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        .quick-btn {
+            background: rgba(99,79,167,.18);
+            border: 0.5px solid rgba(139,92,246,.28);
+            border-radius: 20px;
+            padding: 5px 13px;
+            font-size: 12px;
+            color: #a78bca;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background .2s, color .2s;
+        }
+        .quick-btn:hover { background: rgba(99,79,167,.35); color: #c4b0e8; }
+    </style>
+</head>
+<body>
+
+<div id="stars-container"></div>
+
+<div id="chat-container">
+    <div id="chat-header">
+        <div id="avatar">SB</div>
+        <div>
+            <div id="header-name">Smart Budget</div>
+            <div id="header-status">
+                <span id="status-dot"></span>
+                Online
+            </div>
+        </div>
+    </div>
+
+    <div id="chatbox">
+        <div class="msg-wrap bot">
+            <div class="bubble bot">Hey there! I am Frank your budget buddy. Ask me anything about managing your finances. ✨</div>
+            <div class="msg-label">Budget Bot</div>
+        </div>
+    </div>
+
+    <div id="input-row">
+        <div id="input-wrap">
+            <input type="text" id="userInput" placeholder="Type your message..." />
+        </div>
+        <button id="send-btn" onclick="sendMessage()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+        </button>
+    </div>
+
+    <div id="quick-replies">
+        <button class="quick-btn" onclick="quickSend('How do I create a budget?')">Create a budget</button>
+        <button class="quick-btn" onclick="quickSend('How can I save more money?')">Save money tips</button>
+        <button class="quick-btn" onclick="quickSend('How do I track my expenses?')">Track expenses</button>
+    </div>
+</div>
+
+<script>
+    // Generate stars
+    const starsEl = document.getElementById('stars-container');
+    for (let i = 0; i < 120; i++) {
+        const s = document.createElement('div');
+        s.className = 'star';
+        const size = Math.random() * 2.5 + 0.5;
+        s.style.cssText = `
+            width:${size}px; height:${size}px;
+            top:${Math.random() * 100}%;
+            left:${Math.random() * 100}%;
+            opacity:${Math.random() * 0.7 + 0.1};
+            animation-duration:${Math.random() * 4 + 2}s;
+            animation-delay:${Math.random() * 5}s;
+        `;
+        starsEl.appendChild(s);
+    }
+
+    // Enter key to send
+    document.getElementById('userInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function addMsg(text, isUser) {
+        const box = document.getElementById('chatbox');
+        const wrap = document.createElement('div');
+        wrap.className = 'msg-wrap ' + (isUser ? 'user' : 'bot');
+        wrap.innerHTML = `
+            <div class="bubble ${isUser ? 'user' : 'bot'}">${text}</div>
+            <div class="msg-label">${isUser ? 'You' : 'Budget Bot'}</div>
+        `;
+        box.appendChild(wrap);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function addTyping() {
+        const box = document.getElementById('chatbox');
+        const t = document.createElement('div');
+        t.className = 'msg-wrap bot';
+        t.id = 'typing';
+        t.innerHTML = `
+            <div class="bubble bot">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+            </div>
+        `;
+        box.appendChild(t);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function removeTyping() {
+        const t = document.getElementById('typing');
+        if (t) t.remove();
+    }
+
+    function sendMessage() {
+        const inp = document.getElementById('userInput');
+        const message = inp.value.trim();
+        if (!message) return;
+        inp.value = '';
+        addMsg(message, true);
+        addTyping();
+
+        fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        })
+        .then(res => res.json())
+        .then(data => {
+            
+            removeTyping();
+            addMsg(data.reply, false);
+        })
+        .catch(() => {
+            removeTyping();
+            addMsg("Sorry, I couldn't reach the server. Please try again!", false);
+        });
+    }
+
+    function quickSend(text) {
+        document.getElementById('userInput').value = text;
+        sendMessage();
+    }
+</script>
+</body>
+</html>

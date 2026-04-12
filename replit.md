@@ -16,6 +16,16 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Artifacts
+
+### Smart Budget (`artifacts/smart-budget`)
+- React + Vite frontend, served at `/`
+- Deep purple / dark cosmic theme (radial gradient background with animated stars)
+- Embeds the Voiceflow chat widget (project ID: `69dbef45529f718cef5279b8`) in embedded mode
+- No backend — pure frontend app
+- Main page: `src/pages/Home.tsx`
+- Styling: `src/index.css` (dark cosmic colour palette)
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages

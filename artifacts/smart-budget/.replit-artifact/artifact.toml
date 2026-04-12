@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Smart Budget"
+version = "1.0.0"
+id = "artifacts/smart-budget"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24307
+
+[services.development]
+run = "pnpm --filter @workspace/smart-budget run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/smart-budget", "run", "build" ]
+publicDir = "artifacts/smart-budget/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24307"
+BASE_PATH = "/"
