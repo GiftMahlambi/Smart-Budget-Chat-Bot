@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
+declare global {
+  interface Window {
+    __vfReady?: boolean;
+    voiceflow?: {
+      chat: {
+        load: (config: Record<string, unknown>) => void;
+      };
+    };
+  }
+}
+
 function Stars() {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -29,35 +40,58 @@ function Stars() {
 }
 
 function VoiceflowWidget() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const loadedRef = useRef(false);
+
   useEffect(() => {
-    const existingScript = document.querySelector(
-      'script[src="https://cdn.voiceflow.com/widget-next/bundle.mjs"]'
-    );
-    if (existingScript) return;
+    if (loadedRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const target = document.getElementById("voiceflow-chat");
-    if (!target) return;
-
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.src = "https://cdn.voiceflow.com/widget-next/bundle.mjs";
-    script.onload = function () {
-      (window as any).voiceflow?.chat?.load({
+    function initWidget() {
+      if (loadedRef.current) return;
+      loadedRef.current = true;
+      window.voiceflow?.chat.load({
         verify: { projectID: "69dbef45529f718cef5279b8" },
         url: "https://general-runtime.voiceflow.com",
         versionID: "production",
         voice: { url: "https://runtime-api.voiceflow.com" },
         render: {
           mode: "embedded",
-          target: document.getElementById("voiceflow-chat"),
+          target: container,
         },
       });
-    };
+    }
+
+    // If the bundle is already on window (page revisit / hot reload), init directly
+    if (window.voiceflow?.chat) {
+      initWidget();
+      return;
+    }
+
+    // If a previous effect already inserted the script tag, just attach a load listener
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://cdn.voiceflow.com/widget-next/bundle.mjs"]'
+    );
+    if (existing) {
+      existing.addEventListener("load", initWidget, { once: true });
+      return;
+    }
+
+    // First time: create and inject the script
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = "https://cdn.voiceflow.com/widget-next/bundle.mjs";
+    script.addEventListener("load", initWidget, { once: true });
     document.head.appendChild(script);
   }, []);
 
   return (
-    <div id="voiceflow-chat" className="w-full rounded-2xl overflow-hidden" style={{ minHeight: "560px" }} />
+    <div
+      ref={containerRef}
+      className="w-full rounded-2xl overflow-hidden"
+      style={{ minHeight: "560px" }}
+    />
   );
 }
 
