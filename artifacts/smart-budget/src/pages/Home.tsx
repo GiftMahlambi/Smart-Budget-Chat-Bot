@@ -2,9 +2,50 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
-    voiceflow?: { chat: { load: (config: Record<string, unknown>) => void } };
+    voiceflow?: {
+      chat: {
+        load: (config: Record<string, unknown>) => void;
+        interact: (action: { type: string; payload?: unknown }) => void;
+      };
+    };
     __vfFetchPatched?: boolean;
   }
+}
+
+/* ─────────────────────────────────────────────
+   Send a pre-written message into the Voiceflow chat.
+   Tries the interact() API first; falls back to
+   DOM-based input injection.
+───────────────────────────────────────────── */
+function sendToChat(message: string) {
+  try {
+    (window.voiceflow?.chat as { interact?: (a: unknown) => void })?.interact?.({
+      type: "text",
+      payload: message,
+    });
+    return;
+  } catch {}
+
+  // Fallback: find the widget's text input and submit it
+  const inputEl = document.querySelector<HTMLElement>(
+    '[contenteditable="true"], textarea, input[type="text"]'
+  );
+  if (!inputEl) return;
+  inputEl.focus();
+  if (inputEl instanceof HTMLTextAreaElement || inputEl instanceof HTMLInputElement) {
+    const setter = Object.getOwnPropertyDescriptor(
+      inputEl instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+      "value"
+    )?.set;
+    setter?.call(inputEl, message);
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+  } else if (inputEl.isContentEditable) {
+    inputEl.textContent = message;
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  inputEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true }));
+  inputEl.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", keyCode: 13, bubbles: true }));
 }
 
 /* ─────────────────────────────────────────────
@@ -282,6 +323,117 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
 }
 
 /* ─────────────────────────────────────────────
+   Expense Insights modal
+───────────────────────────────────────────── */
+function ExpenseInsightsModal({
+  budget,
+  chatHistory,
+  onClose,
+  onAskFrank,
+}: {
+  budget: BudgetData | null;
+  chatHistory: string[];
+  onClose: () => void;
+  onAskFrank: (msg: string) => void;
+}) {
+  const pct = budget ? Math.min((budget.spent / budget.limit) * 100, 100) : 0;
+
+  // Extract expense mentions from chat
+  const expenseMentions = chatHistory.filter(t =>
+    /\b(?:spent|paid|bought|cost|expense|bill|fee)\b/i.test(t) &&
+    /\d/.test(t)
+  );
+
+  // Generate contextual savings tips
+  const tips: { icon: string; title: string; body: string }[] = [];
+
+  if (!budget) {
+    tips.push({ icon: "🎯", title: "Set a budget first", body: "Tap \"Set Budget\" or tell Frank your limit — e.g. \"My budget is R5000\" — so we can give you personalised insights." });
+  } else {
+    if (pct >= 90) {
+      tips.push({ icon: "🚨", title: "You're very close to your limit", body: `You've used ${Math.round(pct)}% of your ${budget.currency}${budget.limit.toLocaleString()} budget. Pause non-essential spending for the rest of the month.` });
+      tips.push({ icon: "🛒", title: "Switch to essentials only", body: "Groceries, transport, and utilities first. Delay any shopping, dining out, or entertainment until next month." });
+      tips.push({ icon: "📦", title: "Check for unused subscriptions", body: "Apps, streaming, or gym memberships you're not using add up fast. Cancel at least one this week." });
+    } else if (pct >= 70) {
+      tips.push({ icon: "⚠️", title: "Slow down spending now", body: `You're at ${Math.round(pct)}% with ${budget.currency}${Math.max(budget.limit - budget.spent, 0).toLocaleString()} remaining. Aim to stretch that across the rest of the month.` });
+      tips.push({ icon: "🍱", title: "Meal prep instead of takeaways", body: "Cooking at home for 3–4 days a week can cut food costs by 40–60% compared to eating out or ordering delivery." });
+      tips.push({ icon: "📊", title: "Review your biggest expense", body: "Ask Frank: \"What should I cut to stay under budget?\" and share what you've spent the most on." });
+    } else {
+      tips.push({ icon: "✅", title: "You're on track — keep it up", body: `Only ${Math.round(pct)}% used. Staying disciplined now means you'll have breathing room at the end of the month.` });
+      tips.push({ icon: "💰", title: "Put the surplus to work", body: `You have ${budget.currency}${Math.max(budget.limit - budget.spent, 0).toLocaleString()} left. Consider moving 20–30% of it into savings before it gets spent.` });
+      tips.push({ icon: "🎯", title: "Set a savings sub-goal", body: "Tell Frank what you're saving toward — a holiday, emergency fund, or gadget — and he'll build you a step-by-step plan." });
+    }
+
+    if (expenseMentions.length > 0) {
+      tips.push({ icon: "🔍", title: `${expenseMentions.length} expense${expenseMentions.length > 1 ? "s" : ""} logged this session`, body: `You've mentioned ${expenseMentions.length} spending item${expenseMentions.length > 1 ? "s" : ""} in chat. Ask Frank to categorise them and find where you can save most.` });
+    }
+  }
+
+  const frankMsg = budget && pct >= 70
+    ? `I've spent ${budget.currency}${budget.spent.toLocaleString()} out of my ${budget.currency}${budget.limit.toLocaleString()} budget. How can I cut back and save money this month?`
+    : "Can you give me personalised tips on how to save money and reduce unnecessary spending?";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(5,3,26,.9)", backdropFilter: "blur(10px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-2xl p-7 flex flex-col gap-5 animate-fade-in-up"
+        style={{ background: "linear-gradient(160deg,rgba(13,7,53,.99),rgba(8,4,43,.99))", border: "0.5px solid rgba(139,92,246,.4)", boxShadow: "0 0 70px rgba(99,79,167,.3)", maxHeight: "90vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-purple-100 font-bold text-lg">Expense Insights</h2>
+            <p className="text-purple-400 text-sm mt-0.5">
+              {budget
+                ? `Personalised tips based on your ${Math.round(pct)}% spend`
+                : "Set a budget to unlock personalised tips"}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center text-purple-400 hover:text-purple-200 transition-colors flex-shrink-0 ml-4" style={{ background: "rgba(99,79,167,.2)" }}>✕</button>
+        </div>
+
+        {budget && (
+          <div className="rounded-xl p-3 flex items-center gap-3" style={{ background: "rgba(99,79,167,.12)", border: "0.5px solid rgba(139,92,246,.2)" }}>
+            <div className="flex-1">
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-purple-400">Budget used</span>
+                <span className="font-semibold" style={{ color: pct >= 90 ? "#ef4444" : pct >= 70 ? "#f59e0b" : "#4ade80" }}>{Math.round(pct)}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full" style={{ background: "rgba(99,79,167,.25)" }}>
+                <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: pct >= 90 ? "linear-gradient(90deg,#7c3aed,#ef4444)" : pct >= 70 ? "linear-gradient(90deg,#7c3aed,#f59e0b)" : "linear-gradient(90deg,#7c3aed,#4f46e5)" }} />
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-purple-100 text-sm font-bold">{budget.currency}{budget.spent.toLocaleString()}</p>
+              <p className="text-purple-500 text-xs">of {budget.currency}{budget.limit.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          {tips.map(({ icon, title, body }) => (
+            <div key={title} className="flex gap-3 p-3.5 rounded-xl" style={{ background: "rgba(99,79,167,.1)", border: "0.5px solid rgba(139,92,246,.18)" }}>
+              <span className="text-lg flex-shrink-0 mt-0.5">{icon}</span>
+              <div>
+                <p className="text-purple-100 font-semibold text-sm">{title}</p>
+                <p className="text-purple-400 text-xs leading-relaxed mt-0.5">{body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={() => { onAskFrank(frankMsg); onClose(); }}
+          className="w-full py-3 rounded-xl text-sm font-semibold text-white hover:opacity-90 active:scale-[.98] transition-all flex items-center justify-center gap-2"
+          style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)" }}
+        >
+          <span>💬</span> Ask Frank for personalised advice
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    Budget barometer
 ───────────────────────────────────────────── */
 function BudgetBarometer({ budget, onEdit, flash }: { budget: BudgetData; onEdit: () => void; flash: boolean }) {
@@ -351,12 +503,17 @@ export default function Home() {
   const [budget, setBudget] = useState<BudgetData | null>(null);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showHowModal, setShowHowModal] = useState(false);
+  const [showInsightsModal, setShowInsightsModal] = useState(false);
   const [flash, setFlash] = useState(false);
+  const [chatHistory, setChatHistory] = useState<string[]>([]);
 
   // Install the fetch interceptor once when the page loads
   useEffect(() => { installFetchInterceptor(); }, []);
 
   const handleChatMessage = useCallback((text: string) => {
+    // Always record the raw message
+    setChatHistory((h) => [...h, text]);
+
     const update = parseChatText(text);
     if (!update) return;
 
@@ -371,6 +528,10 @@ export default function Home() {
     setTimeout(() => setFlash(false), 2500);
   }, []);
 
+  function handleSendToChat(msg: string) {
+    sendToChat(msg);
+  }
+
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "radial-gradient(ellipse at top,#0d0735 0%,#05031a 60%)" }}>
       <Stars />
@@ -383,6 +544,14 @@ export default function Home() {
         />
       )}
       {showHowModal && <HowItWorksModal onClose={() => setShowHowModal(false)} />}
+      {showInsightsModal && (
+        <ExpenseInsightsModal
+          budget={budget}
+          chatHistory={chatHistory}
+          onClose={() => setShowInsightsModal(false)}
+          onAskFrank={(msg) => { handleSendToChat(msg); }}
+        />
+      )}
 
       <div className="relative z-10 flex flex-col h-full">
         {/* Header */}
@@ -475,21 +644,46 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Feature cards */}
+              {/* Feature cards — clickable */}
               <div className="flex flex-col gap-3 pt-2">
-                {[
-                  { icon: "🎯", t: "Smart Budgeting", d: "Create personalised budgets tailored to your income and goals." },
-                  { icon: "📈", t: "Savings Goals", d: "Set targets and get step-by-step guidance on reaching them faster." },
-                  { icon: "🔍", t: "Expense Insights", d: "Understand where your money goes and cut unnecessary spending." },
-                ].map(({ icon, t, d }) => (
-                  <div key={t} className="glass-card rounded-xl p-4 flex gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0" style={{ background: "rgba(99,79,167,.25)" }}>{icon}</div>
-                    <div>
-                      <p className="text-purple-100 font-semibold text-sm">{t}</p>
-                      <p className="text-purple-400 text-xs mt-0.5 leading-relaxed">{d}</p>
-                    </div>
+                {/* Smart Budgeting */}
+                <button
+                  onClick={() => handleSendToChat("I want to create a personalised budget based on my income and financial goals. Can you help me build one step by step?")}
+                  className="glass-card rounded-xl p-4 flex gap-3 text-left w-full hover:opacity-80 active:scale-[.99] transition-all group"
+                >
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition-transform" style={{ background: "rgba(99,79,167,.25)" }}>🎯</div>
+                  <div className="flex-1">
+                    <p className="text-purple-100 font-semibold text-sm">Smart Budgeting</p>
+                    <p className="text-purple-400 text-xs mt-0.5 leading-relaxed">Create personalised budgets tailored to your income and goals.</p>
                   </div>
-                ))}
+                  <svg className="text-purple-600 flex-shrink-0 self-center group-hover:text-purple-400 transition-colors" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                {/* Savings Goals */}
+                <button
+                  onClick={() => handleSendToChat("I want to set up savings goals. Can you give me a step-by-step plan to reach them faster based on my income and spending?")}
+                  className="glass-card rounded-xl p-4 flex gap-3 text-left w-full hover:opacity-80 active:scale-[.99] transition-all group"
+                >
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition-transform" style={{ background: "rgba(99,79,167,.25)" }}>📈</div>
+                  <div className="flex-1">
+                    <p className="text-purple-100 font-semibold text-sm">Savings Goals</p>
+                    <p className="text-purple-400 text-xs mt-0.5 leading-relaxed">Set targets and get step-by-step guidance on reaching them faster.</p>
+                  </div>
+                  <svg className="text-purple-600 flex-shrink-0 self-center group-hover:text-purple-400 transition-colors" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                {/* Expense Insights */}
+                <button
+                  onClick={() => setShowInsightsModal(true)}
+                  className="glass-card rounded-xl p-4 flex gap-3 text-left w-full hover:opacity-80 active:scale-[.99] transition-all group"
+                >
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition-transform" style={{ background: "rgba(99,79,167,.25)" }}>🔍</div>
+                  <div className="flex-1">
+                    <p className="text-purple-100 font-semibold text-sm">Expense Insights</p>
+                    <p className="text-purple-400 text-xs mt-0.5 leading-relaxed">See personalised savings tips based on what you've shared with Frank.</p>
+                  </div>
+                  <svg className="text-purple-600 flex-shrink-0 self-center group-hover:text-purple-400 transition-colors" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
               </div>
 
               {/* Footer */}
