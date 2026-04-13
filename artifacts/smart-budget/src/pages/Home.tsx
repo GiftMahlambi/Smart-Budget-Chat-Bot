@@ -169,11 +169,12 @@ function VoiceflowWidget({ onMessage }: { onMessage: (text: string) => void }) {
       'script[src="https://cdn.voiceflow.com/widget-next/bundle.mjs"]'
     );
     if (existing) { existing.addEventListener("load", initWidget, { once: true }); return; }
+    const s = document.getElementsByTagName("script")[0];
     const script = document.createElement("script");
     script.type = "text/javascript";
     script.src = "https://cdn.voiceflow.com/widget-next/bundle.mjs";
     script.addEventListener("load", initWidget, { once: true });
-    document.head.appendChild(script);
+    s.parentNode!.insertBefore(script, s);
   }, []);
 
   return (
