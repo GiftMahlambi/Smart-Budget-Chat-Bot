@@ -64,7 +64,12 @@
     color: hsl(var(--foreground));
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    overflow-y: auto;
   }
+}
+
+@media (min-width: 1024px) {
+  body { overflow: hidden; }
 }
 
 @keyframes twinkle {

@@ -181,7 +181,7 @@ function VoiceflowWidget({ onMessage }: { onMessage: (text: string) => void }) {
     <div
       ref={containerRef}
       className="w-full rounded-2xl overflow-hidden"
-      style={{ height: "100%", minHeight: "480px" }}
+      style={{ height: "100%", minHeight: "380px" }}
     />
   );
 }
@@ -534,7 +534,7 @@ export default function Home() {
   }
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: "radial-gradient(ellipse at top,#0d0735 0%,#05031a 60%)" }}>
+    <div className="lg:fixed lg:inset-0 lg:overflow-hidden min-h-screen" style={{ background: "radial-gradient(ellipse at top,#0d0735 0%,#05031a 60%)" }}>
       <Stars />
 
       {showBudgetModal && (
@@ -554,9 +554,9 @@ export default function Home() {
         />
       )}
 
-      <div className="relative z-10 flex flex-col h-full">
+      <div className="relative z-10 flex flex-col lg:h-full">
         {/* Header */}
-        <header className="flex-shrink-0 px-5 py-3.5 flex items-center justify-between max-w-7xl mx-auto w-full">
+        <header className="flex-shrink-0 px-4 sm:px-5 py-3 sm:py-3.5 flex items-center justify-between max-w-7xl mx-auto w-full">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white animate-pulse-glow" style={{ background: "linear-gradient(135deg,#7c3aed,#4f46e5)", border: "1.5px solid rgba(139,92,246,.5)" }}>SB</div>
             <span className="text-base font-semibold text-purple-100">Smart Budget</span>
@@ -582,17 +582,17 @@ export default function Home() {
         </header>
 
         {/* Two-column main */}
-        <main className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 px-5 pb-4 max-w-7xl mx-auto w-full">
+        <main className="flex-1 lg:overflow-hidden flex flex-col lg:flex-row gap-0 px-4 sm:px-5 pb-4 max-w-7xl mx-auto w-full">
 
           {/* Left – scrollable content */}
-          <section className="lg:flex-1 overflow-y-auto pr-0 lg:pr-6 pb-4 lg:pb-0 flex flex-col gap-4 custom-scroll">
+          <section className="lg:flex-1 lg:overflow-y-auto pr-0 lg:pr-6 pb-4 lg:pb-0 flex flex-col gap-4 custom-scroll">
             <div className="pt-4 flex flex-col gap-4">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full w-fit text-xs font-medium" style={{ background: "rgba(99,79,167,.18)", border: "0.5px solid rgba(139,92,246,.28)", color: "#a78bca" }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
                 AI-powered budget assistant — online now
               </div>
 
-              <h1 className="text-3xl lg:text-4xl font-bold leading-snug">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-snug">
                 <span className="text-purple-100">Meet </span><span className="gradient-text">Frank</span>
                 <br /><span className="text-purple-100">your budget buddy</span>
               </h1>
@@ -700,8 +700,8 @@ export default function Home() {
           </section>
 
           {/* Right – chatbot panel */}
-          <section className="flex-shrink-0 lg:w-[460px] flex flex-col min-h-[420px] lg:min-h-0">
-            <div className="glass-card rounded-2xl p-1.5 relative h-full flex flex-col" style={{ minHeight: "420px" }}>
+          <section className="flex-shrink-0 lg:w-[460px] flex flex-col">
+            <div className="glass-card rounded-2xl p-1.5 relative flex flex-col" style={{ height: "clamp(420px, 65vh, 100%)" }}>
               <div className="absolute -inset-px rounded-2xl pointer-events-none" style={{ background: "linear-gradient(135deg,rgba(139,92,246,.12),rgba(79,70,229,.06))" }} />
               <div className="flex-1 relative" style={{ minHeight: 0 }}>
                 <VoiceflowWidget onMessage={handleChatMessage} />
