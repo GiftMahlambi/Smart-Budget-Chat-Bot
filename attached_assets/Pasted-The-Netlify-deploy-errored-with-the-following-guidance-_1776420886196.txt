@@ -1,0 +1,134 @@
+The Netlify deploy errored, with the following guidance provided:
+
+Diagnosis
+- Relevant log lines: the build command invoked here [line 66](#L66) and Vite start here [line 68](#L68). Vite fails to load the config [line 69](#L69) and the error message is "PORT environment variable is required but was not provided." [line 71](#L71). The thrown error originates from the bundled vite.config.ts [line 72](#L72). The script exits with failure [line 81](#L81)-[line 83](#L83).
+- Error type: runtime error thrown while loading vite.config.ts during the build.
+- Cause: vite.config.ts expects a PORT environment variable to be present and explicitly throws when it is not provided. That makes the Vite config load fail in the Netlify build environment where PORT is not set.
+
+Solution
+1) Quick fix (set PORT in Netlify build environment)
+- Add a PORT environment variable in your Netlify site settings (or in netlify.toml) so the build sees it.
+  - Netlify UI: Site > Settings > Build & deploy > Environment > Add variable: key = PORT, value = 5173 (or whichever port your config expects).
+  - Or add to netlify.toml at the repo root:
+```toml
+[build.environment]
+  PORT = "5173"
+```
+- Re-run the deploy.
+
+2) Recommended fix (make vite.config.ts robust so builds don't require PORT)
+- Modify artifacts/mockup-sandbox/vite.config.ts to not require PORT during a production build. Only use PORT for dev/serve, or provide a sensible default instead of throwing. Example change:
+```ts
+// TypeScript (vite.config.ts)
+import { defineConfig } from 'vite';
+
+const port = process.env.PORT ?? '5173';
+
+export default defineConfig(({ command }) => {
+  if (command === 'serve') {
+    // only require/use PORT for local dev server
+    return {
+      server: {
+        port: Number(port),
+      },
+    };
+  }
+
+  // For build, do not require PORT — return your build config
+  return {
+    // ...your build config
+  };
+});
+```
+- Alternatively, replace the explicit throw in vite.config.ts with a default or conditional behavior so the build process can proceed without a PORT env var.
+
+Why this works
+- The current build fails while loading vite.config.ts because it throws if PORT is missing ([line 69](#L69) → [line 71](#L71)). Either supplying PORT in the build environment or making vite.config.ts tolerant of a missing PORT prevents the thrown error and allows Vite to load and run the build.
+
+Files to edit
+- artifacts/mockup-sandbox/vite.config.ts
+
+After making one of the above fixes, push the change (or update Netlify env vars) and retry the deploy.
+
+The relevant error logs are:
+
+Line 0: build-image version: ac6eb13fbf000e5c09ad677efd8b7c3c2d0142b6 (noble-new-builds)
+Line 1: buildbot version: 8867f4b2604d4cbf5c3a806b3254c82128b2ca70
+Line 2: Fetching cached dependencies
+Line 3: Failed to fetch cache, continuing with build
+Line 4: Fetching build zip file
+Line 5: Starting to prepare the repo for build
+Line 6: Custom publish path detected. Proceeding with the specified path: 'artifacts/mockup-sandbox/dist'
+Line 7: Custom build command detected. Proceeding with the specified command: 'pnpm --filter @workspace/mockup-sandbox... run build'
+Line 8: Installing dependencies
+Line 9: mise [36m~/.config/mise/config.toml[0m tools: [34mpython[0m@3.14.3
+Line 10: mise [36m~/.config/mise/config.toml[0m tools: [34mruby[0m@3.4.8
+Line 11: mise [36m~/.config/mise/config.toml[0m tools: [34mgo[0m@1.26.2
+Line 12: v22.22.2 is already installed.
+Line 13: Now using node v22.22.2 (npm v10.9.7)
+Line 30: + prettier 3.8.1
+Line 31: + typescript 5.9.3
+Line 32: . preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnpm instead" >
+Line 33: . preinstall: Done
+Line 34: Done in 5.4s using pnpm v10.30.3
+Line 35: npm packages installed using pnpm
+Line 36: Successfully installed dependencies
+Line 37: Detected 0 framework(s)
+Line 38: Starting build script
+Line 39: Section completed: initializing
+Line 40: Failed during stage 'building site': Build script returned non-zero exit code: 2
+Line 41: [96m[1m​[22m[39m
+Line 42: [96m[1mNetlify Build                                                 [22m[39m
+Line 43: [96m[1m────────────────────────────────────────────────────────────────[22m[39m
+Line 44: [36m[1m​[22m[39m
+Line 45: [36m[1m❯ Version[22m[39m
+Line 46:   @netlify/build 35.13.1
+Line 47: [36m[1m​[22m[39m
+Line 48: [36m[1m❯ Flags[22m[39m
+Line 49:   accountId: 69e1498e64923a7ef90eb3d4
+Line 50:   baseRelDir: true
+Line 59: [36m[1m​[22m[39m
+Line 60: [36m[1m❯ Context[22m[39m
+Line 61:   production
+Line 62: [96m[1m​[22m[39m
+Line 63: [96m[1mbuild.command from netlify.toml                               [22m[39m
+Line 64: [96m[1m────────────────────────────────────────────────────────────────[22m[39m
+Line 65: ​
+Line 66: [36m$ pnpm --filter @workspace/mockup-sandbox... run build[39m
+Line 67: > @workspace/mockup-sandbox@2.0.0 build /opt/build/repo/artifacts/mockup-sandbox
+Line 68: > vite build
+Line 69: [31mfailed to load config from /opt/build/repo/artifacts/mockup-sandbox/vite.config.ts[39m
+Line 70: [31merror during build:
+Line 71: Error: PORT environment variable is required but was not provided.
+Line 72:     at file:///opt/build/repo/artifacts/mockup-sandbox/node_modules/.vite-temp/vite.config.ts.timestamp-1776420294975-3e163bbe49
+Line 73:     at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+Line 74:     at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+Line 75:     at async loadConfigFromBundledFile (file:///opt/build/repo/node_modules/.pnpm/vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_light
+Line 76:     at async bundleAndLoadConfigFile (file:///opt/build/repo/node_modules/.pnpm/vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightni
+Line 77:     at async loadConfigFromFile (file:///opt/build/repo/node_modules/.pnpm/vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss
+Line 78:     at async resolveConfig (file:///opt/build/repo/node_modules/.pnpm/vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31
+Line 79:     at async createBuilder (file:///opt/build/repo/node_modules/.pnpm/vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31
+Line 80:     at async CAC.<anonymous> (file:///opt/build/repo/node_modules/.pnpm/vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.
+Line 81: /opt/build/repo/artifacts/mockup-sandbox:
+Line 82: [41m[30m ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL [39m[49m [31m@workspace/mockup-sandbox@2.0.0 build: `vite build`[39m
+Line 83: [31mExit status 1[39m
+Line 84: [91m[1m​[22m[39m
+Line 85: [91m[1m"build.command" failed                                        [22m[39m
+Line 86: [91m[1m────────────────────────────────────────────────────────────────[22m[39m
+Line 87: ​
+Line 88:   [31m[1mError message[22m[39m
+Line 89:   Command failed with exit code 1: pnpm --filter @workspace/mockup-sandbox... run build
+Line 90: ​
+Line 91:   [31m[1mError location[22m[39m
+Line 92:   In build.command from netlify.toml:
+Line 93:   pnpm --filter @workspace/mockup-sandbox... run build
+Line 94: ​
+Line 95:   [31m[1mResolved config[22m[39m
+Line 96:   build:
+Line 97:     command: pnpm --filter @workspace/mockup-sandbox... run build
+Line 98:     commandOrigin: config
+Line 99:     publish: /opt/build/repo/artifacts/mockup-sandbox/dist
+Line 100:     publishOrigin: config
+Line 101: Build failed due to a user error: Build script returned non-zero exit code: 2
+Line 102: Failing build: Failed to build site
+Line 103: Finished processing build request in 14.307s

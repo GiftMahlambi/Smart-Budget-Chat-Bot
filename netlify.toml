@@ -1,0 +1,12 @@
+[build]
+  command   = "pnpm --filter @workspace/smart-budget run build"
+  publish   = "artifacts/smart-budget/dist/public"
+
+[build.environment]
+  NODE_ENV  = "production"
+  BASE_PATH = "/"
+
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
