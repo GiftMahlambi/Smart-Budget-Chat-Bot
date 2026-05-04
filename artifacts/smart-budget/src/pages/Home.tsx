@@ -505,6 +505,7 @@ export default function Home() {
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showHowModal, setShowHowModal] = useState(false);
   const [showInsightsModal, setShowInsightsModal] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [flash, setFlash] = useState(false);
   const [chatHistory, setChatHistory] = useState<string[]>([]);
 
