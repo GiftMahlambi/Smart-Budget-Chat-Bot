@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "4NXNy5J6CKMwoJIIh_IZG"
+uri = "file://README.md"
+type = "text"
+title = "Smart Budget — README"
