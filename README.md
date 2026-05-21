@@ -1,4 +1,4 @@
-# Smart Budget
+# Smart Budget Chat Bot
 
 Smart Budget is a web app that helps users manage money through a conversational AI assistant named Frank. Instead of filling in long forms or spreadsheets, users can chat naturally about spending, budget limits, and savings goals while the app updates the budget view in real time.
 
