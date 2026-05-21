@@ -1,6 +1,6 @@
 [build]
   command   = "pnpm --filter @workspace/smart-budget run build"
-  publish   = "dist"
+  publish   = "apps/smart-budget/dist"
 
 [build.environment]
   NODE_ENV  = "production"
