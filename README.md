@@ -77,7 +77,7 @@ corepack pnpm --filter @workspace/smart-budget build
 The built app is created at:
 
 ```text
-artifacts/smart-budget/dist/public
+artifacts/smart-budget/dist
 ```
 
 ## Vercel Deployment
@@ -86,7 +86,7 @@ Vercel uses the root `vercel.json`:
 
 ```text
 Build command: pnpm --filter @workspace/smart-budget build
-Output directory: artifacts/smart-budget/dist/public
+Output directory: artifacts/smart-budget/dist
 ```
 
 The app also includes a rewrite rule so the deployed site loads correctly from any route.

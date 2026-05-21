@@ -1,6 +1,6 @@
 {
   "buildCommand": "pnpm --filter @workspace/smart-budget build",
-  "outputDirectory": "artifacts/smart-budget/dist/public",
+  "outputDirectory": "artifacts/smart-budget/dist",
   "rewrites": [
     {
       "source": "/(.*)",

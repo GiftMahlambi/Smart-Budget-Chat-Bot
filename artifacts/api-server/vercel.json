@@ -1,6 +1,6 @@
 {
   "buildCommand": "cd ../.. && pnpm --filter @workspace/smart-budget build && node scripts/copy-vercel-output.mjs",
-  "outputDirectory": "dist/public",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/(.*)",
