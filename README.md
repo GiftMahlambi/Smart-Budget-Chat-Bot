@@ -1,5 +1,7 @@
 # Smart Budget Chat Bot
 
+Live site: https://smart-budget-chatbot1.netlify.app/
+
 Smart Budget is a web app that helps users manage money through a conversational AI assistant named Frank. Instead of filling in long forms or spreadsheets, users can chat naturally about spending, budget limits, and savings goals while the app updates the budget view in real time.
 
 ## Why It Was Created
@@ -34,7 +36,7 @@ Smart Budget is designed for:
 | Styling | Tailwind CSS |
 | AI assistant | Voiceflow embedded chat |
 | Package manager | pnpm workspaces |
-| Deployment | Vercel |
+| Deployment | Netlify, Vercel configuration |
 
 ## Project Structure
 
