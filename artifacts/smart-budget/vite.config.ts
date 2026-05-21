@@ -8,28 +8,7 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig(({ command }) => ({
   base: basePath,
-  plugins: [
-    react(),
-    tailwindcss(),
-    ...(command === "serve" &&
-    process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          (async () =>
-            (
-              await import("@replit/vite-plugin-runtime-error-modal")
-            ).default())(),
-          (async () =>
-            (
-              await import("@replit/vite-plugin-cartographer")
-            ).cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }))(),
-          (async () =>
-            (await import("@replit/vite-plugin-dev-banner")).devBanner())(),
-        ]
-      : []),
-  ],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),

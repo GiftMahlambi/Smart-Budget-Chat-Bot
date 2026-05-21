@@ -1,0 +1,10 @@
+{
+  "buildCommand": "cd ../.. && pnpm --filter @workspace/smart-budget build",
+  "outputDirectory": "../smart-budget/dist/public",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
